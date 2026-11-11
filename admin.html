@@ -1,0 +1,76 @@
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin | Maison L’kam</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Playfair+Display:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}body{background:#0b0b0b;color:#f3eee3;font:17px/1.6 'Cormorant Garamond',Georgia,serif}
+h1,h2,.logo{font-family:'Playfair Display',Georgia,serif;font-weight:500}h1,.logo{color:#c9a24b}h2{margin:30px 0 10px;font-size:26px}.logo{font-weight:700;text-decoration:none;letter-spacing:.1em}
+header{padding:14px 5vw;border-bottom:1px solid #2b2616;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+main{max-width:1100px;margin:0 auto;padding:24px 5vw 60px}a{color:#c9a24b}
+.btn{background:#c9a24b;color:#000;border:1px solid #c9a24b;padding:8px 16px;font:600 14px 'Cormorant Garamond',serif;cursor:pointer;letter-spacing:.08em;text-transform:uppercase}.btn.o{background:none;color:#c9a24b}.btn:disabled{opacity:.5;cursor:wait}
+input,select,textarea{width:100%;padding:9px;background:#0f0f0f;color:inherit;border:1px solid #2b2616;font:inherit;margin:4px 0 10px}input[type=checkbox]{width:auto;margin-right:8px}
+label{font-size:15px;color:#a39b8b}.row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid #2b2616;align-items:center}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}@media(max-width:700px){.g{grid-template-columns:1fr}}
+.m{color:#a39b8b;font-size:15px}.err{color:#e58a8a}.ok{color:#c9a24b}:focus-visible{outline:2px solid #c9a24b}details{padding:8px 0;border-bottom:1px solid #2b2616}summary{cursor:pointer}
+</style></head><body>
+<header><a class="logo" href="index.html">MAISON L’KAM</a><span class="m">Administration</span></header>
+<main id="m"><p>Chargement…</p></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" defer></script>
+<script src="supabase-client.js" defer></script><script src="supabase-shop.js" defer></script>
+<script defer>
+// Cette page n'est qu'une interface : les droits admin sont imposes par la base (RLS), pas par ce script.
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ST={new:'Nouvelle',preparing:'En préparation',done:'Terminée',cancelled:'Annulée'},PG=50,TND=n=>(n/1000).toFixed(3)+' TND';
+const CATS={vet:'Vêtements',chau:'Chaussures',acc:'Accessoires',parf:'Parfums',perso:'Produits personnalisés'};
+let off=0,PRODS=[],editing=false;
+const msg=(id,t,c)=>{const e=$(id);e.textContent=t;e.className=c||'m'};
+const SHELL=`<h1>Gestion des commandes</h1>
+<p><button class="btn o" id="rf">Actualiser</button> <label>Statut <select id="fs" style="width:auto"><option value="">Tous les statuts</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label></p>
+<p id="om" class="m" role="status"></p><div id="ol"></div><p><button class="btn o" id="more" hidden>Chargement de la suite</button></p>
+<h2>Produits</h2><p><button class="btn o" id="np">Nouveau produit</button></p><p id="pm" class="m" role="status"></p><div id="pl"></div>
+<h2 id="ft">Ajouter un produit</h2>
+<form id="pf" novalidate><div class="g"><div><label for="id">Identifiant (nombre)</label><input id="id" name="id" type="number" min="1" required></div>
+<div><label for="category">Catégorie</label><select id="category" name="category">${Object.entries(CATS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+<div><label for="name">Nom</label><input id="name" name="name" maxlength="120" required></div><div><label for="name_en">Nom (anglais)</label><input id="name_en" name="name_en" maxlength="120"></div>
+<div><label for="price">Prix (TND)</label><input id="price" name="price" inputmode="decimal" required></div>
+<div><label for="image_url">Image (https://… ou images/fichier.jpg)</label><input id="image_url" name="image_url"></div></div>
+<label for="description">Description</label><textarea id="description" name="description" rows="3"></textarea>
+<label for="description_en">Description (anglais)</label><textarea id="description_en" name="description_en" rows="3"></textarea>
+<label for="features">Caractéristiques (une par ligne)</label><textarea id="features" name="features" rows="3"></textarea>
+<p><label><input type="checkbox" name="available" checked>Visible dans la boutique</label></p>
+<p id="fm" class="m" role="alert"></p><button class="btn" type="submit">Enregistrer le produit</button></form>`;
+const oRow=o=>{const s=o.ship_to||{};return `<details data-id="${esc(o.id)}" data-ts="${esc(o.updated_at)}"><summary><b>${esc(o.ref)}</b> · ${new Date(o.created_at).toLocaleString()} · ${esc(s.name)} · ${TND(o.total)} · <span class="st">${ST[o.status]||esc(o.status)}</span></summary>
+${o.items.map(i=>`<div class="row"><span>${esc(i.name)} × ${esc(i.qty)}</span><span>${TND(i.unit_price)} → ${TND(i.unit_price*i.qty)}</span></div>`).join('')}
+<p class="m">Sous-total ${TND(o.subtotal)} · Livraison ${TND(o.shipping)} · Total ${TND(o.total)} · Paiement simulé : ${esc(o.payment)}</p>
+<p>${esc([s.name,s.email,s.phone,s.addr,s.zip,s.city,s.country].join(' · '))}</p>
+<label>Statut <select class="sel" style="width:auto">${Object.entries(ST).map(([k,v])=>`<option value="${k}"${k===o.status?' selected':''}>${v}</option>`).join('')}</select></label> <button class="btn sv">Enregistrer</button> <span class="rm m" role="status"></span></details>`};
+async function loadOrders(reset){const b=$('#more'),l=$('#ol');if(reset){off=0;l.innerHTML=''}
+ msg('#om','Chargement…');b.disabled=true;const r=await shop.listOrders($('#fs').value,off,off+PG-1);b.disabled=false;
+ if(!r.ok){msg('#om',r.error,'err');return}
+ if(reset&&!r.data.length){msg('#om','Aucune commande.');b.hidden=true;return}
+ msg('#om','');l.insertAdjacentHTML('beforeend',r.data.map(oRow).join(''));off+=r.data.length;b.hidden=r.data.length<PG}
+async function loadProducts(){msg('#pm','Chargement…');const r=await shop.listProducts();if(!r.ok)return msg('#pm',r.error,'err');msg('#pm','');PRODS=r.data;
+ $('#pl').innerHTML=PRODS.length?PRODS.map(p=>`<div class="row"><span><b>${esc(p.name)}</b> <span class="m">#${p.id} · ${esc(CATS[p.category]||p.category)} · ${TND(p.price_millimes)}${p.available?'':' · masqué'}</span></span><span><button class="btn o ed" data-id="${p.id}">Modifier</button> <button class="btn o dl" data-id="${p.id}">Supprimer</button></span></div>`).join(''):'<p class="m">Aucun produit.</p>'}
+function resetForm(){$('#pf').reset();editing=false;$('#id').disabled=false;$('#ft').textContent='Ajouter un produit'}
+function bind(){
+ $('#rf').onclick=()=>loadOrders(true);$('#fs').onchange=()=>loadOrders(true);$('#more').onclick=()=>loadOrders(false);
+ $('#ol').addEventListener('click',async e=>{const b=e.target.closest('.sv');if(!b)return;const d=b.closest('details'),rm=d.querySelector('.rm');b.disabled=true;
+  const r=await shop.setStatus(d.dataset.id,d.querySelector('.sel').value,d.dataset.ts);b.disabled=false;
+  if(!r.ok){rm.textContent=r.error;rm.className='rm err';return}
+  d.dataset.ts=r.data.updated_at;d.querySelector('.st').textContent=ST[r.data.status];rm.textContent='Statut enregistré.';rm.className='rm ok'});
+ $('#np').onclick=()=>{resetForm();$('#id').focus()};
+ $('#pl').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const p=PRODS.find(x=>x.id==b.dataset.id);if(!p)return;
+  if(b.classList.contains('ed')){const f=$('#pf').elements;editing=true;$('#ft').textContent='Modifier le produit #'+p.id;f.id.value=p.id;f.id.disabled=true;f.name.value=p.name;f.name_en.value=p.name_en||'';f.category.value=p.category;
+   f.price.value=(p.price_millimes/1000).toString();f.image_url.value=p.image_url||'';f.description.value=p.description||'';f.description_en.value=p.description_en||'';f.features.value=(p.features||[]).join('\n');f.available.checked=p.available;$('#pf').scrollIntoView()}
+  else if(b.classList.contains('dl')&&confirm('Supprimer « '+p.name+' » ? Cette action est définitive.')){b.disabled=true;const r=await shop.deleteProduct(p.id);if(!r.ok){b.disabled=false;return msg('#pm',r.error,'err')}loadProducts()}});
+ $('#pf').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button[type=submit]'),v=n=>f.elements[n].value.trim();
+  const price=Math.round(parseFloat(v('price').replace(',','.'))*1000),id=parseInt(f.elements.id.value,10),img=v('image_url');
+  if(!(id>0)||!v('name')||!(price>=0)||(img&&!/^(https:\/\/|images\/)/.test(img)))return msg('#fm','Vérifiez : identifiant, nom, prix, image (https://… ou images/…).','err');
+  const row={id,name:v('name'),name_en:v('name_en')||null,category:v('category'),price_millimes:price,image_url:img||null,description:v('description'),description_en:v('description_en')||null,features:v('features').split('\n').map(s=>s.trim()).filter(Boolean),available:f.elements.available.checked};
+  b.disabled=true;const r=await shop.saveProduct(row,!editing);b.disabled=false;
+  if(!r.ok)return msg('#fm',r.error,'err');msg('#fm','Produit enregistré.','ok');resetForm();loadProducts()})}
+async function boot(){const u=await shop.currentUser(),m=$('#m');
+ if(!u){m.innerHTML='<h1>Admin</h1><p>Veuillez vous connecter sur <a href="index.html">le site</a> avec un compte administrateur, puis revenir ici.</p>';return}
+ if(!u.admin){m.innerHTML='<h1>Accès refusé</h1><p>Cette page est réservée aux administrateurs. <a href="index.html">Retour à la boutique</a></p>';return}
+ m.innerHTML=SHELL;bind();loadOrders(true);loadProducts()}
+addEventListener('DOMContentLoaded',boot);
+</script></body></html>
